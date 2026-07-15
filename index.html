@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<meta name="theme-color" content="#000000" />
+<title>AR-FPS PROTO // FIELD TEST 01</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
+<style>
+  :root {
+    --red: #ff2a2a;
+    --neon: #d8ff2a;
+    --green: #3aff8a;
+    --panel: rgba(8, 10, 8, 0.72);
+    --line: rgba(216, 255, 42, 0.25);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; overflow: hidden; background: #000; }
+  body {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    color: #e8f0e0;
+    user-select: none; -webkit-user-select: none;
+  }
+
+  /* ---------- CAMERA ---------- */
+  #cam {
+    position: fixed; inset: 0; width: 100%; height: 100%;
+    object-fit: cover; background: #000;
+  }
+
+  /* ---------- SETUP OVERLAY ---------- */
+  #setup {
+    position: fixed; inset: 0; z-index: 40;
+    background: radial-gradient(ellipse at 50% 30%, #0c140c 0%, #000 75%);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 22px; padding: 24px; text-align: center;
+  }
+  #setup h1 {
+    font-size: 20px; letter-spacing: 0.35em; font-weight: 700; color: var(--neon);
+  }
+  #setup h1 span { color: var(--red); }
+  #setup .sub { font-size: 11px; letter-spacing: 0.2em; opacity: 0.55; margin-top: -14px; }
+  .btn {
+    font-family: inherit; font-size: 15px; letter-spacing: 0.25em; font-weight: 700;
+    padding: 16px 34px; border: 1px solid var(--line); border-radius: 4px;
+    background: var(--panel); color: #e8f0e0; cursor: pointer;
+  }
+  .btn:active { background: #1a221a; }
+  .btn.primary { border-color: var(--red); color: var(--red); }
+  #codeRow { display: none; flex-direction: column; gap: 14px; align-items: center; }
+  #joinRow { display: none; flex-direction: column; gap: 14px; align-items: center; }
+  #roomCode {
+    font-size: 44px; letter-spacing: 0.4em; color: var(--neon); font-weight: 700;
+    padding-left: 0.4em; /* balance letter-spacing */
+  }
+  #joinInput {
+    font-family: inherit; font-size: 30px; letter-spacing: 0.35em; text-align: center;
+    text-transform: uppercase; width: 200px; padding: 12px 0 12px 0.35em;
+    background: #0a0f0a; border: 1px solid var(--line); border-radius: 4px; color: var(--neon);
+    outline: none;
+  }
+  #setupStatus { font-size: 11px; letter-spacing: 0.15em; color: #9ab08a; min-height: 16px; }
+
+  /* ---------- HUD ---------- */
+  #hud { position: fixed; inset: 0; z-index: 10; display: none; pointer-events: none; }
+
+  .panel {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 3px;
+    padding: 6px 10px; font-size: 10px; letter-spacing: 0.15em;
+  }
+  #topBar {
+    position: absolute; top: max(10px, env(safe-area-inset-top)); left: 12px; right: 12px;
+    display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;
+  }
+  #linkPill { color: var(--green); }
+  #linkPill.down { color: var(--red); }
+  #yellowMeter { color: var(--neon); min-width: 118px; text-align: right; }
+  #yellowMeter b { font-size: 14px; }
+
+  /* reticle */
+  #reticle {
+    position: absolute; left: 50%; top: 50%; width: 220px; height: 220px;
+    transform: translate(-50%, -50%);
+  }
+  /* target zone ring — matches the detection sample box */
+  #zoneRing {
+    position: absolute; left: 50%; top: 50%;
+    border: 1px dashed rgba(216,255,42,0.35); border-radius: 2px;
+    transform: translate(-50%, -50%);
+  }
+
+  #bottomBar {
+    position: absolute; bottom: max(14px, env(safe-area-inset-bottom));
+    left: 12px; right: 12px; display: flex; align-items: flex-end;
+    justify-content: space-between; gap: 10px; pointer-events: none;
+  }
+  #tuner { pointer-events: auto; display: flex; flex-direction: column; gap: 4px; width: 150px; }
+  #tuner label { font-size: 9px; letter-spacing: 0.15em; color: #9ab08a; }
+  #tuner input[type=range] { width: 100%; accent-color: var(--neon); }
+  #ammoBox { text-align: center; }
+  #ammoBox b { font-size: 20px; color: #fff; }
+
+  #fireBtn {
+    pointer-events: auto;
+    width: 108px; height: 108px; border-radius: 50%;
+    border: 2px solid var(--red);
+    background: radial-gradient(circle at 50% 40%, rgba(255,42,42,0.28), rgba(20,0,0,0.75));
+    color: var(--red); font-family: inherit; font-size: 15px; font-weight: 800;
+    letter-spacing: 0.25em; padding-left: 0.25em;
+    box-shadow: 0 0 24px rgba(255,42,42,0.35);
+  }
+  #fireBtn:active { transform: scale(0.94); background: rgba(255,42,42,0.4); color: #fff; }
+  #fireBtn:disabled { opacity: 0.35; }
+
+  #reloadBtn {
+    pointer-events: auto; margin-top: 6px;
+    font-family: inherit; font-size: 9px; letter-spacing: 0.2em;
+    background: none; border: 1px solid var(--line); border-radius: 3px;
+    color: #9ab08a; padding: 5px 10px;
+  }
+
+  /* shot result toast */
+  #shotResult {
+    position: absolute; left: 50%; top: 34%; transform: translateX(-50%);
+    font-size: 18px; font-weight: 800; letter-spacing: 0.3em; padding-left: 0.3em;
+    opacity: 0; transition: opacity 0.15s;
+    text-shadow: 0 0 12px currentColor;
+  }
+  #shotResult.show { opacity: 1; }
+  #shotResult.hit { color: var(--green); }
+  #shotResult.miss { color: #8a9a8a; }
+
+  /* muzzle flash */
+  #muzzle {
+    position: fixed; inset: 0; z-index: 20; pointer-events: none;
+    background: radial-gradient(circle at 50% 62%, rgba(255,240,180,0.9), rgba(255,120,20,0.25) 30%, transparent 55%);
+    opacity: 0;
+  }
+  #muzzle.bang { animation: bang 0.12s ease-out; }
+  @keyframes bang { 0% { opacity: 1; } 100% { opacity: 0; } }
+
+  /* ---------- YOU'VE BEEN HIT ---------- */
+  #hitOverlay {
+    position: fixed; inset: 0; z-index: 30; display: none;
+    align-items: center; justify-content: center; flex-direction: column; gap: 10px;
+    text-align: center;
+  }
+  #hitOverlay.active { display: flex; animation: strobe 0.5s steps(2, jump-none) 3; background: rgba(200,0,0,0.85); }
+  @keyframes strobe {
+    0%   { background: rgba(220,0,0,0.92); }
+    100% { background: rgba(90,0,0,0.55); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    #hitOverlay.active { animation: none; background: rgba(200,0,0,0.88); }
+  }
+  #hitOverlay h2 {
+    font-size: clamp(28px, 9vw, 64px); font-weight: 900; letter-spacing: 0.18em;
+    color: #fff; text-shadow: 0 0 22px #000;
+  }
+  #hitOverlay p { font-size: 12px; letter-spacing: 0.3em; color: #ffd9d9; }
+</style>
+</head>
+<body>
+
+<video id="cam" autoplay muted playsinline></video>
+
+<!-- reticle + HUD -->
+<div id="hud">
+  <div id="topBar">
+    <div class="panel" id="linkPill">LINK: —</div>
+    <div class="panel" id="yellowMeter">TARGET SIG<br><b>0%</b></div>
+  </div>
+
+  <svg id="reticle" viewBox="0 0 220 220" fill="none">
+    <!-- outer stadia -->
+    <line x1="0"   y1="110" x2="62"  y2="110" stroke="#111" stroke-width="7"/>
+    <line x1="158" y1="110" x2="220" y2="110" stroke="#111" stroke-width="7"/>
+    <line x1="110" y1="196" x2="110" y2="220" stroke="#111" stroke-width="7"/>
+    <!-- fine cross -->
+    <line x1="70"  y1="110" x2="96"  y2="110" stroke="#ff2a2a" stroke-width="2"/>
+    <line x1="124" y1="110" x2="150" y2="110" stroke="#ff2a2a" stroke-width="2"/>
+    <!-- chevron -->
+    <path d="M110 96 L120 114 L100 114 Z" stroke="#ff2a2a" stroke-width="2" fill="none"/>
+    <!-- BDC ladder -->
+    <line x1="110" y1="118" x2="110" y2="182" stroke="#ff2a2a" stroke-width="1.5"/>
+    <line x1="99"  y1="132" x2="121" y2="132" stroke="#ff2a2a" stroke-width="1.5"/>
+    <line x1="102" y1="148" x2="118" y2="148" stroke="#ff2a2a" stroke-width="1.5"/>
+    <line x1="104" y1="164" x2="116" y2="164" stroke="#ff2a2a" stroke-width="1.5"/>
+  </svg>
+  <div id="zoneRing"></div>
+
+  <div id="shotResult"></div>
+
+  <div id="bottomBar">
+    <div id="tuner" class="panel">
+      <label>SENSITIVITY <span id="thVal">8</span>%</label>
+      <input type="range" id="threshold" min="2" max="30" value="8" />
+    </div>
+    <div id="ammoBox" class="panel">
+      MAG <b id="ammo">12</b>/12
+      <br><button id="reloadBtn">RELOAD</button>
+    </div>
+    <button id="fireBtn">FIRE</button>
+  </div>
+</div>
+
+<div id="muzzle"></div>
+
+<div id="hitOverlay">
+  <h2>YOU'VE BEEN HIT</h2>
+  <p id="hitFrom">— INCOMING FIRE —</p>
+</div>
+
+<!-- setup -->
+<div id="setup">
+  <h1>AR-FPS <span>//</span> PROTO</h1>
+  <div class="sub">FIELD TEST 01 — YELLOW SIGNATURE LINK</div>
+  <button class="btn primary" id="hostBtn">HOST MATCH</button>
+  <button class="btn" id="joinBtn">JOIN MATCH</button>
+
+  <div id="codeRow">
+    <div class="sub">SHARE THIS CODE</div>
+    <div id="roomCode">····</div>
+  </div>
+  <div id="joinRow">
+    <input id="joinInput" maxlength="4" autocomplete="off" placeholder="CODE" />
+    <button class="btn primary" id="joinGo">CONNECT</button>
+  </div>
+  <div id="setupStatus"></div>
+</div>
+
+<canvas id="grab" width="96" height="96" style="display:none"></canvas>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const cam = $('cam'), grab = $('grab'), gctx = grab.getContext('2d', { willReadFrequently: true });
+
+  // ---------- STATE ----------
+  let peer = null, conn = null;
+  let ammo = 12, canFire = true;
+  let audioCtx = null;
+
+  // ---------- AUDIO ----------
+  function ensureAudio() {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+  }
+  function gunshot() {
+    if (!audioCtx) return;
+    const t = audioCtx.currentTime;
+    const buf = audioCtx.createBuffer(1, audioCtx.sampleRate * 0.25, audioCtx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 2.2);
+    const src = audioCtx.createBufferSource(); src.buffer = buf;
+    const g = audioCtx.createGain(); g.gain.setValueAtTime(0.9, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+    const f = audioCtx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 3200;
+    src.connect(f).connect(g).connect(audioCtx.destination); src.start(t);
+  }
+  function hitAlarm() {
+    if (!audioCtx) return;
+    const t = audioCtx.currentTime;
+    for (let i = 0; i < 3; i++) {
+      const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+      o.type = 'square'; o.frequency.value = 880;
+      g.gain.setValueAtTime(0.0001, t + i * 0.5);
+      g.gain.exponentialRampToValueAtTime(0.35, t + i * 0.5 + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + i * 0.5 + 0.3);
+      o.connect(g).connect(audioCtx.destination);
+      o.start(t + i * 0.5); o.stop(t + i * 0.5 + 0.32);
+    }
+  }
+
+  // ---------- CAMERA ----------
+  async function startCamera() {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }
+    });
+    cam.srcObject = stream;
+    await cam.play();
+  }
+
+  // ---------- DETECTION ----------
+  // Samples the central square of the camera frame (the "target zone"),
+  // returns fraction of pixels matching neon yellow.
+  const ZONE_FRAC = 0.30; // central zone = 30% of the shorter video side
+  function yellowRatio() {
+    const vw = cam.videoWidth, vh = cam.videoHeight;
+    if (!vw || !vh) return 0;
+    const side = Math.floor(Math.min(vw, vh) * ZONE_FRAC);
+    const sx = Math.floor((vw - side) / 2), sy = Math.floor((vh - side) / 2);
+    gctx.drawImage(cam, sx, sy, side, side, 0, 0, 96, 96);
+    const px = gctx.getImageData(0, 0, 96, 96).data;
+    let hits = 0, total = 96 * 96;
+    for (let i = 0; i < px.length; i += 4) {
+      const r = px[i] / 255, g = px[i + 1] / 255, b = px[i + 2] / 255;
+      const mx = Math.max(r, g, b), mn = Math.min(r, g, b), c = mx - mn;
+      if (mx < 0.45 || c < 0.18) continue;           // value + saturation gate
+      let h = 0;
+      if (mx === r) h = 60 * (((g - b) / c) % 6);
+      else if (mx === g) h = 60 * ((b - r) / c + 2);
+      else h = 60 * ((r - g) / c + 4);
+      if (h < 0) h += 360;
+      const s = mx === 0 ? 0 : c / mx;
+      if (h >= 40 && h <= 95 && s >= 0.35) hits++;   // neon yellow band
+    }
+    return hits / total;
+  }
+
+  // size the on-screen zone ring to visually match the sampled region
+  function sizeZoneRing() {
+    const vw = cam.videoWidth, vh = cam.videoHeight;
+    if (!vw || !vh) return;
+    // object-fit: cover scale factor
+    const scale = Math.max(innerWidth / vw, innerHeight / vh);
+    const side = Math.min(vw, vh) * ZONE_FRAC * scale;
+    const ring = $('zoneRing');
+    ring.style.width = side + 'px';
+    ring.style.height = side + 'px';
+  }
+  addEventListener('resize', sizeZoneRing);
+
+  // live calibration readout
+  setInterval(() => {
+    if ($('hud').style.display !== 'block') return;
+    const r = yellowRatio();
+    $('yellowMeter').innerHTML = 'TARGET SIG<br><b>' + (r * 100).toFixed(1) + '%</b>';
+    sizeZoneRing();
+  }, 300);
+
+  // ---------- FIRE ----------
+  async function fire() {
+    if (!canFire || ammo <= 0) return;
+    canFire = false; ammo--;
+    $('ammo').textContent = ammo;
+    ensureAudio(); gunshot();
+    const m = $('muzzle'); m.classList.remove('bang'); void m.offsetWidth; m.classList.add('bang');
+    if (navigator.vibrate) navigator.vibrate(40);
+
+    // burst-sample 3 frames over ~200ms, take the best
+    let best = yellowRatio();
+    for (let i = 0; i < 2; i++) {
+      await new Promise(r => setTimeout(r, 90));
+      best = Math.max(best, yellowRatio());
+    }
+    const th = Number($('threshold').value) / 100;
+    const isHit = best >= th;
+
+    const res = $('shotResult');
+    res.textContent = isHit ? 'HIT CONFIRMED' : 'MISS';
+    res.className = 'show ' + (isHit ? 'hit' : 'miss');
+    setTimeout(() => res.classList.remove('show'), 900);
+
+    if (isHit && conn && conn.open) conn.send({ type: 'hit', sig: Math.round(best * 100) });
+
+    setTimeout(() => { canFire = true; }, 600);
+  }
+  $('fireBtn').addEventListener('click', fire);
+  $('reloadBtn').addEventListener('click', () => { ammo = 12; $('ammo').textContent = ammo; });
+  $('threshold').addEventListener('input', e => $('thVal').textContent = e.target.value);
+
+  // ---------- GOT HIT ----------
+  function youveBeenHit() {
+    ensureAudio(); hitAlarm();
+    if (navigator.vibrate) navigator.vibrate([220, 90, 220, 90, 220]);
+    const o = $('hitOverlay');
+    o.classList.add('active');
+    setTimeout(() => o.classList.remove('active'), 1600);
+  }
+
+  // ---------- PEER LINK ----------
+  const PREFIX = 'arfps-proto-';
+  const codeChars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  const makeCode = () => Array.from({ length: 4 }, () => codeChars[Math.random() * codeChars.length | 0]).join('');
+
+  function wire(c) {
+    conn = c;
+    conn.on('open', async () => {
+      $('setupStatus').textContent = 'LINK ESTABLISHED';
+      try { await startCamera(); } catch (e) {
+        $('setupStatus').textContent = 'CAMERA DENIED — check permissions'; return;
+      }
+      $('setup').style.display = 'none';
+      $('hud').style.display = 'block';
+      $('linkPill').textContent = 'LINK: LIVE';
+      $('linkPill').classList.remove('down');
+      sizeZoneRing();
+    });
+    conn.on('data', d => { if (d && d.type === 'hit') youveBeenHit(); });
+    conn.on('close', () => { $('linkPill').textContent = 'LINK: LOST'; $('linkPill').classList.add('down'); });
+    conn.on('error', () => { $('linkPill').textContent = 'LINK: ERROR'; $('linkPill').classList.add('down'); });
+  }
+
+  $('hostBtn').addEventListener('click', () => {
+    ensureAudio();
+    const code = makeCode();
+    $('hostBtn').style.display = 'none'; $('joinBtn').style.display = 'none';
+    $('codeRow').style.display = 'flex';
+    $('roomCode').textContent = code;
+    $('setupStatus').textContent = 'WAITING FOR PLAYER 2…';
+    peer = new Peer(PREFIX + code);
+    peer.on('connection', wire);
+    peer.on('error', e => $('setupStatus').textContent = 'PEER ERROR: ' + e.type);
+  });
+
+  $('joinBtn').addEventListener('click', () => {
+    ensureAudio();
+    $('hostBtn').style.display = 'none'; $('joinBtn').style.display = 'none';
+    $('joinRow').style.display = 'flex';
+    $('joinInput').focus();
+  });
+
+  $('joinGo').addEventListener('click', () => {
+    const code = $('joinInput').value.trim().toUpperCase();
+    if (code.length !== 4) { $('setupStatus').textContent = 'CODE IS 4 CHARACTERS'; return; }
+    $('setupStatus').textContent = 'CONNECTING…';
+    peer = new Peer();
+    peer.on('open', () => wire(peer.connect(PREFIX + code, { reliable: true })));
+    peer.on('error', e => {
+      $('setupStatus').textContent = e.type === 'peer-unavailable'
+        ? 'NO MATCH ON THAT CODE' : 'PEER ERROR: ' + e.type;
+    });
+  });
+})();
+</script>
+</body>
+</html>
